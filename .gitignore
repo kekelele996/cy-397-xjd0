@@ -1,0 +1,15 @@
+target/
+.env
+.DS_Store
+*.log
+
+# Go
+backend/server
+backend/*.out
+backend/*.test
+backend/coverage.*
+
+# 构建与生成产物
+dist/
+build/
+*.pdf

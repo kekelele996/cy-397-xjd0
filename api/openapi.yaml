@@ -1,0 +1,157 @@
+openapi: 3.0.3
+info:
+  title: 合同模板生成与法律工单 API 服务
+  version: 1.0.0
+  description: 提供合同模板管理、合同填充生成、签署状态、法律工单、工单流转、法律 FAQ 与用户合同库接口。
+servers:
+  - url: http://127.0.0.1:19412
+paths:
+  /healthz:
+    get:
+      summary: 健康检查
+      responses:
+        '200':
+          description: 服务正常
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+  /api/v1/auth/register:
+    post:
+      summary: 用户注册
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string, example: demo }
+                password: { type: string, example: secret123 }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/v1/auth/login:
+    post:
+      summary: 登录获取 JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string, example: demo }
+                password: { type: string, example: secret123 }
+      responses:
+        '200':
+          description: 返回 token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+  /api/v1/templates:
+    get:
+      summary: 合同模板列表
+      parameters:
+        - { name: category, in: query, schema: { type: string } }
+        - { name: keyword, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 10 } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/v1/templates/{id}:
+    get:
+      summary: 合同模板详情
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/v1/contracts:
+    post:
+      summary: 选择模板并生成合同
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [template_id, title]
+              properties:
+                template_id: { type: integer, example: 1 }
+                title: { type: string, example: 房屋租赁合同-2026 }
+                variables:
+                  type: object
+                  additionalProperties: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+    get:
+      summary: 用户合同库
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [draft, pending_signed, signed, expired] } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 10 } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/v1/tickets:
+    post:
+      summary: 提交法律咨询工单
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, title, description]
+              properties:
+                type: { type: string, enum: [labor, contract, property, ip, other] }
+                title: { type: string }
+                description: { type: string }
+                attachments:
+                  type: array
+                  items: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+    get:
+      summary: 工单列表
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/v1/faqs:
+    get:
+      summary: FAQ 搜索
+      parameters:
+        - { name: category, in: query, schema: { type: string } }
+        - { name: keyword, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 10 } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Response:
+      type: object
+      properties:
+        code: { type: integer, example: 0 }
+        message: { type: string, example: ok }
+        data: { type: object }
+  responses:
+    Success:
+      description: 成功
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Response'
