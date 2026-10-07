@@ -21,7 +21,10 @@ type ContractService struct {
 	contractRepo repository.ContractRepository
 	templateRepo repository.TemplateRepository
 	pdf          *PDFService
-	logger       *slog.Logger
+	// ticketSync 合同状态落定后把该合同下未关工单标成待复核；可为 nil（不联动）。
+	// 合同落定在前、通知工单在后，通知失败不回滚合同，可对该合同单独重试。
+	ticketSync TicketSyncer
+	logger     *slog.Logger
 }
 
 // NewContractService 构造合同服务。
@@ -29,9 +32,27 @@ func NewContractService(
 	contractRepo repository.ContractRepository,
 	templateRepo repository.TemplateRepository,
 	pdf *PDFService,
+	ticketSync TicketSyncer,
 	logger *slog.Logger,
 ) *ContractService {
-	return &ContractService{contractRepo: contractRepo, templateRepo: templateRepo, pdf: pdf, logger: logger}
+	return &ContractService{
+		contractRepo: contractRepo,
+		templateRepo: templateRepo,
+		pdf:          pdf,
+		ticketSync:   ticketSync,
+		logger:       logger,
+	}
+}
+
+// notifyTickets 合同落定后联动工单；失败只记日志，不影响合同结果。
+func (s *ContractService) notifyTickets(contractID uint64) {
+	if s.ticketSync == nil {
+		return
+	}
+	if _, err := s.ticketSync.SyncContractTickets(contractID); err != nil {
+		s.logger.Error("sync tickets after contract settled failed; contract stays settled, retry the ticket batch",
+			"contract_id", contractID, "error", err)
+	}
 }
 
 // Create 根据模板与变量生成合同草稿。
@@ -164,6 +185,7 @@ func (s *ContractService) Sign(userID, contractID uint64, signerName, signerRole
 		return fmt.Errorf("sign contract: add signer: %w", err)
 	}
 	s.logger.Info("contract signed", "contract_id", contract.ID, "signer", signerName)
+	s.notifyTickets(contract.ID)
 	return nil
 }
 
@@ -186,6 +208,7 @@ func (s *ContractService) Expire(userID, contractID uint64) error {
 		return fmt.Errorf("expire contract: update: %w", err)
 	}
 	s.logger.Info("contract expired", "contract_id", contract.ID)
+	s.notifyTickets(contract.ID)
 	return nil
 }
 

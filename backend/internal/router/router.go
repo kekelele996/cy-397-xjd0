@@ -63,13 +63,18 @@ func New(
 			authed.POST("/contracts/:id/expire", contractHandler.Expire)
 			authed.GET("/contracts/:id/signers", contractHandler.Signers)
 			authed.GET("/contracts/:id/export", contractHandler.Export)
+			authed.POST("/contracts/:id/sync-tickets", ticketHandler.SyncContractTickets)
 
 			authed.POST("/tickets", ticketHandler.Create)
 			authed.GET("/tickets", ticketHandler.List)
+			authed.POST("/tickets/batch-close", ticketHandler.BatchClose)
+			authed.POST("/admin/tickets/backfill-contract", ticketHandler.Backfill)
 			authed.GET("/tickets/:id", ticketHandler.Get)
 			authed.POST("/tickets/:id/replies", ticketHandler.AddReply)
 			authed.GET("/tickets/:id/replies", ticketHandler.Replies)
 			authed.PATCH("/tickets/:id/status", ticketHandler.UpdateStatus)
+			authed.POST("/tickets/:id/close", ticketHandler.Close)
+			authed.POST("/tickets/:id/review", ticketHandler.Review)
 
 			authed.POST("/admin/faqs", knowledgeHandler.Create)
 			authed.PUT("/admin/faqs/:id", knowledgeHandler.Update)

@@ -13,7 +13,9 @@ type AppError struct {
 	Status  int
 	Code    int
 	Message string
-	Err     error
+	// Data 可选的结构化错误明细（如关单对账差异列表）。
+	Data any
+	Err  error
 }
 
 func (e *AppError) Error() string {
@@ -24,6 +26,12 @@ func (e *AppError) Error() string {
 }
 
 func (e *AppError) Unwrap() error { return e.Err }
+
+// WithData 附带结构化错误明细。
+func (e *AppError) WithData(data any) *AppError {
+	e.Data = data
+	return e
+}
 
 // NewAppError 构造业务错误。
 func NewAppError(status, code int, message string) *AppError {
@@ -58,6 +66,16 @@ func ConflictError(message string) *AppError {
 // InvalidTransitionError 构造非法状态流转错误。
 func InvalidTransitionError(message string) *AppError {
 	return NewAppError(http.StatusUnprocessableEntity, constants.CodeInvalidTransition, message)
+}
+
+// ReconcileMismatchError 构造关单对账不一致错误，mismatches 为差异明细。
+func ReconcileMismatchError(message string, data any) *AppError {
+	return (&AppError{
+		Status:  http.StatusConflict,
+		Code:    constants.CodeReconcileMismatch,
+		Message: message,
+		Data:    data,
+	})
 }
 
 // InternalError 构造内部错误。

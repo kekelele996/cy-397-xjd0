@@ -271,3 +271,47 @@ func (m *mockTicketRepo) ListReplies(ticketID uint64) ([]model.TicketReply, erro
 	return m.replies[ticketID], nil
 }
 
+func (m *mockTicketRepo) ListOpenByContract(contractID uint64) ([]model.LegalTicket, error) {
+	var list []model.LegalTicket
+	for _, item := range m.tickets {
+		if item.ContractID == contractID && item.Status != "closed" {
+			list = append(list, *item)
+		}
+	}
+	return list, nil
+}
+
+func (m *mockTicketRepo) MarkOpenTicketsPendingReview(contractID uint64) (int64, error) {
+	var affected int64
+	for _, item := range m.tickets {
+		if item.ContractID != contractID {
+			continue
+		}
+		if item.Status == "closed" || item.Status == "pending_review" || item.Status == "on_hold" {
+			continue
+		}
+		item.Status = "pending_review"
+		affected++
+	}
+	return affected, nil
+}
+
+func (m *mockTicketRepo) ListByIDs(ids []uint64) ([]model.LegalTicket, error) {
+	var list []model.LegalTicket
+	for _, id := range ids {
+		if item, ok := m.tickets[id]; ok {
+			list = append(list, *item)
+		}
+	}
+	return list, nil
+}
+
+func (m *mockTicketRepo) ListWithoutContract(offset, limit int) ([]model.LegalTicket, error) {
+	var list []model.LegalTicket
+	for _, item := range m.tickets {
+		if item.ContractID == 0 {
+			list = append(list, *item)
+		}
+	}
+	return list, nil
+}

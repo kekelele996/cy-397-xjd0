@@ -13,16 +13,17 @@ import (
 
 // TicketService 法律工单提交、流转与回复业务。
 type TicketService struct {
-	ticketRepo repository.TicketRepository
-	logger     *slog.Logger
+	ticketRepo     repository.TicketRepository
+	contractReader ContractSnapshotReader
+	logger         *slog.Logger
 }
 
-// NewTicketService 构造工单服务。
-func NewTicketService(ticketRepo repository.TicketRepository, logger *slog.Logger) *TicketService {
-	return &TicketService{ticketRepo: ticketRepo, logger: logger}
+// NewTicketService 构造工单服务。contractReader 用于建单时登记合同快照，可为 nil（不关联合同）。
+func NewTicketService(ticketRepo repository.TicketRepository, contractReader ContractSnapshotReader, logger *slog.Logger) *TicketService {
+	return &TicketService{ticketRepo: ticketRepo, contractReader: contractReader, logger: logger}
 }
 
-// Create 提交法律咨询工单。
+// Create 提交法律咨询工单。指定 contract_id 时登记该合同此刻的状态与签署方快照。
 func (s *TicketService) Create(userID uint64, req dto.CreateTicketRequest) (*model.LegalTicket, error) {
 	if !constants.IsValidTicketType(req.Type) {
 		return nil, dto.ValidationError("invalid ticket type")
@@ -35,10 +36,30 @@ func (s *TicketService) Create(userID uint64, req dto.CreateTicketRequest) (*mod
 		Attachments: model.StringSlice(req.Attachments),
 		Status:      constants.TicketStatusPending,
 	}
+	if req.ContractID != 0 {
+		if s.contractReader == nil {
+			return nil, dto.ValidationError("contract linking is unavailable")
+		}
+		contract, err := s.contractReader.FindByIDForUser(req.ContractID, userID)
+		if err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				return nil, dto.NotFoundError("contract not found")
+			}
+			return nil, fmt.Errorf("create ticket: find contract: %w", err)
+		}
+		signers, err := s.contractReader.ListSigners(contract.ID)
+		if err != nil {
+			return nil, fmt.Errorf("create ticket: list contract signers: %w", err)
+		}
+		ticket.ContractID = contract.ID
+		ticket.ContractStatusSnapshot = contract.Status
+		ticket.ContractSignersSnapshot = model.FromSigners(signers)
+	}
 	if err := s.ticketRepo.Create(ticket); err != nil {
 		return nil, fmt.Errorf("create ticket: %w", err)
 	}
-	s.logger.Info("ticket created", "ticket_id", ticket.ID, "user_id", userID, "type", ticket.Type)
+	s.logger.Info("ticket created",
+		"ticket_id", ticket.ID, "user_id", userID, "type", ticket.Type, "contract_id", ticket.ContractID)
 	return ticket, nil
 }
 
@@ -60,7 +81,7 @@ func (s *TicketService) GetForUser(userID, ticketID uint64) (*model.LegalTicket,
 
 // ListForUser 查询用户工单列表，支持按状态筛选。
 func (s *TicketService) ListForUser(userID uint64, status string, page, pageSize int) ([]model.LegalTicket, int64, error) {
-	if status != "" && !isValidTicketStatus(status) {
+	if status != "" && !constants.IsValidTicketStatus(status) {
 		return nil, 0, dto.ValidationError("invalid ticket status")
 	}
 	offset := (page - 1) * pageSize
@@ -72,6 +93,7 @@ func (s *TicketService) ListForUser(userID uint64, status string, page, pageSize
 }
 
 // AddReply 添加工单回复，并按回复角色推进状态。
+// 待复核/挂起工单可以继续补充回复，但不会自动改状态，需走复核或关单对账。
 func (s *TicketService) AddReply(userID, ticketID uint64, role, content string, attachments []string) (*model.TicketReply, error) {
 	ticket, err := s.ticketRepo.FindByIDForUser(ticketID, userID)
 	if err != nil {
@@ -110,8 +132,11 @@ func (s *TicketService) AddReply(userID, ticketID uint64, role, content string, 
 	return reply, nil
 }
 
-// Transition 手动推进工单状态。
+// Transition 手动推进工单状态。关单不走这里——关单必须经 CloseWithReconcile 对账。
 func (s *TicketService) Transition(userID, ticketID uint64, status string) error {
+	if status == constants.TicketStatusClosed {
+		return dto.InvalidTransitionError("closing a ticket must go through the reconcile endpoint")
+	}
 	ticket, err := s.ticketRepo.FindByIDForUser(ticketID, userID)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
@@ -134,14 +159,4 @@ func (s *TicketService) Transition(userID, ticketID uint64, status string) error
 func (s *TicketService) ListReplies(userID, ticketID uint64) ([]model.TicketReply, error) {
 	_, replies, err := s.GetForUser(userID, ticketID)
 	return replies, err
-}
-
-func isValidTicketStatus(status string) bool {
-	switch status {
-	case constants.TicketStatusPending, constants.TicketStatusProcessing,
-		constants.TicketStatusReplied, constants.TicketStatusClosed:
-		return true
-	default:
-		return false
-	}
 }

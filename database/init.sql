@@ -68,12 +68,16 @@ CREATE TABLE IF NOT EXISTS legal_tickets (
     description TEXT NOT NULL,
     attachments JSON NOT NULL,
     status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    contract_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    contract_status_snapshot VARCHAR(32) NOT NULL DEFAULT '',
+    contract_signers_snapshot JSON NULL,
     created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
     PRIMARY KEY (id),
     KEY idx_legal_tickets_user_id (user_id),
     KEY idx_legal_tickets_type (type),
-    KEY idx_legal_tickets_status (status)
+    KEY idx_legal_tickets_status (status),
+    KEY idx_legal_tickets_contract_id (contract_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS ticket_replies (

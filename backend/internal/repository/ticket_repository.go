@@ -6,6 +6,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/contractapi/contractapi/internal/constants"
 	"github.com/contractapi/contractapi/internal/model"
 )
 
@@ -18,6 +19,16 @@ type TicketRepository interface {
 	Update(ticket *model.LegalTicket) error
 	AddReply(reply *model.TicketReply) error
 	ListReplies(ticketID uint64) ([]model.TicketReply, error)
+
+	// ListOpenByContract 查询某份合同下所有未关工单（合同签署/过期后联动用）。
+	ListOpenByContract(contractID uint64) ([]model.LegalTicket, error)
+	// MarkOpenTicketsPendingReview 把某份合同下未关工单批量置为待复核。
+	// 已是待复核/挂起的工单保持原状态，避免抹掉挂起标记；返回受影响行数。
+	MarkOpenTicketsPendingReview(contractID uint64) (int64, error)
+	// ListByIDs 按编号批量查询工单。
+	ListByIDs(ids []uint64) ([]model.LegalTicket, error)
+	// ListWithoutContract 查询历史遗留、未登记合同编号的工单（旧数据回填用）。
+	ListWithoutContract(offset, limit int) ([]model.LegalTicket, error)
 }
 
 type ticketRepository struct {
@@ -92,6 +103,55 @@ func (r *ticketRepository) ListReplies(ticketID uint64) ([]model.TicketReply, er
 	var list []model.TicketReply
 	if err := r.db.Where("ticket_id = ?", ticketID).Order("id ASC").Find(&list).Error; err != nil {
 		return nil, fmt.Errorf("list ticket replies: %w", err)
+	}
+	return list, nil
+}
+
+func (r *ticketRepository) ListOpenByContract(contractID uint64) ([]model.LegalTicket, error) {
+	var list []model.LegalTicket
+	if err := r.db.
+		Where("contract_id = ? AND status <> ?", contractID, constants.TicketStatusClosed).
+		Order("id ASC").
+		Find(&list).Error; err != nil {
+		return nil, fmt.Errorf("list open tickets by contract: %w", err)
+	}
+	return list, nil
+}
+
+func (r *ticketRepository) MarkOpenTicketsPendingReview(contractID uint64) (int64, error) {
+	result := r.db.Model(&model.LegalTicket{}).
+		Where("contract_id = ? AND status <> ? AND status <> ? AND status <> ?",
+			contractID,
+			constants.TicketStatusClosed,
+			constants.TicketStatusPendingReview,
+			constants.TicketStatusOnHold,
+		).
+		Update("status", constants.TicketStatusPendingReview)
+	if result.Error != nil {
+		return 0, fmt.Errorf("mark open tickets pending review: %w", result.Error)
+	}
+	return result.RowsAffected, nil
+}
+
+func (r *ticketRepository) ListByIDs(ids []uint64) ([]model.LegalTicket, error) {
+	if len(ids) == 0 {
+		return []model.LegalTicket{}, nil
+	}
+	var list []model.LegalTicket
+	if err := r.db.Where("id IN ?", ids).Order("id ASC").Find(&list).Error; err != nil {
+		return nil, fmt.Errorf("list tickets by ids: %w", err)
+	}
+	return list, nil
+}
+
+func (r *ticketRepository) ListWithoutContract(offset, limit int) ([]model.LegalTicket, error) {
+	var list []model.LegalTicket
+	if err := r.db.
+		Where("contract_id = 0").
+		Order("id ASC").
+		Offset(offset).Limit(limit).
+		Find(&list).Error; err != nil {
+		return nil, fmt.Errorf("list tickets without contract: %w", err)
 	}
 	return list, nil
 }

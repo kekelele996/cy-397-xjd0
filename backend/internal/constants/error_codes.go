@@ -12,4 +12,5 @@ const (
 	CodeNotFound          = 40400
 	CodeConflict          = 40900
 	CodeInvalidTransition = 42200
+	CodeReconcileMismatch = 42201
 )

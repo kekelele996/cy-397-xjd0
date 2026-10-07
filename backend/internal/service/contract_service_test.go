@@ -25,7 +25,7 @@ func newContractFixture() (*mockTemplateRepo, *mockContractRepo, *service.Contra
 		},
 	})
 	contracts := newMockContractRepo()
-	svc := service.NewContractService(contracts, templates, service.NewPDFService(testLogger()), testLogger())
+	svc := service.NewContractService(contracts, templates, service.NewPDFService(testLogger()), nil, testLogger())
 	return templates, contracts, svc
 }
 

@@ -10,9 +10,9 @@ import (
 
 func TestTicketServiceCreate(t *testing.T) {
 	tests := []struct {
-		name    string
+		name       string
 		ticketType string
-		wantErr bool
+		wantErr    bool
 	}{
 		{name: "labor", ticketType: constants.TicketTypeLabor, wantErr: false},
 		{name: "property", ticketType: constants.TicketTypeProperty, wantErr: false},
@@ -20,7 +20,7 @@ func TestTicketServiceCreate(t *testing.T) {
 	}
 
 	repo := newMockTicketRepo()
-	svc := service.NewTicketService(repo, testLogger())
+	svc := service.NewTicketService(repo, nil, testLogger())
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ticket, err := svc.Create(1, dto.CreateTicketRequest{
@@ -44,7 +44,7 @@ func TestTicketServiceCreate(t *testing.T) {
 
 func TestTicketServiceReplyTransitions(t *testing.T) {
 	repo := newMockTicketRepo()
-	svc := service.NewTicketService(repo, testLogger())
+	svc := service.NewTicketService(repo, nil, testLogger())
 	ticket, err := svc.Create(1, dto.CreateTicketRequest{
 		Type:        constants.TicketTypeContract,
 		Title:       "合同咨询",
@@ -81,10 +81,28 @@ func TestTicketServiceReplyTransitions(t *testing.T) {
 		t.Fatalf("status after lawyer reply = %q, want replied", got.Status)
 	}
 
-	if err := svc.Transition(1, ticket.ID, constants.TicketStatusClosed); err != nil {
-		t.Fatalf("Transition(closed) unexpected error: %v", err)
+	// 关单必须走对账接口；无关联合同的工单对账直接通过。
+	link := service.NewTicketContractService(repo, nil, testLogger())
+	if _, err := link.CloseWithReconcile(1, ticket.ID); err != nil {
+		t.Fatalf("CloseWithReconcile() unexpected error: %v", err)
 	}
 	if _, err := svc.AddReply(1, ticket.ID, constants.TicketReplyRoleUser, "再问", nil); err == nil {
 		t.Fatal("AddReply() expected error after closed, got nil")
+	}
+}
+
+func TestTicketServiceCannotCloseViaTransition(t *testing.T) {
+	repo := newMockTicketRepo()
+	svc := service.NewTicketService(repo, nil, testLogger())
+	ticket, err := svc.Create(1, dto.CreateTicketRequest{
+		Type:        constants.TicketTypeContract,
+		Title:       "关单约束",
+		Description: "咨询内容",
+	})
+	if err != nil {
+		t.Fatalf("Create() unexpected error: %v", err)
+	}
+	if err := svc.Transition(1, ticket.ID, constants.TicketStatusClosed); err == nil {
+		t.Fatal("Transition(closed) expected error, got nil")
 	}
 }

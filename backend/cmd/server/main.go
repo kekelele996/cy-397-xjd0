@@ -61,14 +61,19 @@ func main() {
 	pdfService := service.NewPDFService(logger)
 	authService := service.NewAuthService(userRepo, jwtManager, logger)
 	templateService := service.NewTemplateService(templateRepo, favoriteRepo, logger)
-	contractService := service.NewContractService(contractRepo, templateRepo, pdfService, logger)
-	ticketService := service.NewTicketService(ticketRepo, logger)
+
+	// 工单-合同联动服务：建单登记快照、合同落定联动、关单对账、旧数据回填。
+	// 先建联动服务（TicketSyncer），再注入合同服务；合同服务同时作为合同快照读取方。
+	ticketContractService := service.NewTicketContractService(ticketRepo, contractRepo, logger)
+	contractService := service.NewContractService(contractRepo, templateRepo, pdfService, ticketContractService, logger)
+	ticketService := service.NewTicketService(ticketRepo, contractRepo, logger)
+	backfillService := service.NewBackfillService(ticketRepo, contractRepo, logger)
 	knowledgeService := service.NewKnowledgeService(knowledgeRepo, logger)
 
 	authHandler := handler.NewAuthHandler(authService, logger)
 	templateHandler := handler.NewTemplateHandler(templateService, logger)
 	contractHandler := handler.NewContractHandler(contractService, logger)
-	ticketHandler := handler.NewTicketHandler(ticketService, logger)
+	ticketHandler := handler.NewTicketHandler(ticketService, ticketContractService, backfillService, logger)
 	knowledgeHandler := handler.NewKnowledgeHandler(knowledgeService, logger)
 
 	engine := router.New(logger, jwtManager, authHandler, templateHandler, contractHandler, ticketHandler, knowledgeHandler)

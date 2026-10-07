@@ -22,7 +22,7 @@ func ErrorHandler(logger *slog.Logger) gin.HandlerFunc {
 			c.AbortWithStatusJSON(appErr.Status, dto.Response{
 				Code:    appErr.Code,
 				Message: appErr.Message,
-				Data:    nil,
+				Data:    appErr.Data,
 			})
 			return
 		}

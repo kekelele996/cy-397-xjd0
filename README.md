@@ -34,6 +34,9 @@ docker compose --env-file .env down -v --remove-orphans
 - 合同生成：选择模板并填充变量，生成纯文本 / HTML 合同，支持 wkhtmltopdf 导出 PDF。
 - 合同签署状态管理：草稿 → 待签署 → 已签署 → 已过期，记录签署时间与签署方信息。
 - 法律工单系统：提交劳动纠纷 / 合同纠纷 / 房产纠纷 / 知识产权 / 其他类型工单。
+- 工单与合同联动：建单按合同编号登记当时的合同状态与签署方快照，工单详情实时带出合同库现状；合同签署/过期后，该合同下未关工单自动标为待复核。
+- 关单对账：工单组关单（支持单笔与批量）前以合同库现状核对登记快照，对得上才准关，对不上挂起并逐笔列出差异；待复核/挂起工单复核确认后刷新快照。
+- 旧数据回填：未填合同编号的历史工单按问题描述中的合同编号回填，回填不出的单列（管理接口 / 升级命令）。
 - 工单流转：待处理 → 处理中 → 已回复 → 已关闭，支持文字与附件回复。
 - 常见法律知识库：FAQ 分类检索与关键词搜索。
 - 用户合同库：查看自己创建的全部合同，按状态筛选，支持模板收藏。
@@ -53,6 +56,31 @@ go run ./cmd/server
 ```
 
 服务默认监听 `8080` 端口，健康检查地址为 `http://127.0.0.1:8080/healthz`。
+
+### 工单与合同联动说明
+
+- 提交工单时带 `contract_id`，工单会记下**此刻**合同状态与签署方快照（`contract_status_snapshot`、`contract_signers_snapshot`），之后合同再变化不会改快照。
+- 工单详情 `GET /api/v1/tickets/:id` 在 `data.contract` 中同时返回登记快照、合同库现状（`current_status`/`current_signers`）与对账结果 `reconciled`。
+- 合同被签署或置为已过期后，该合同下所有未关工单自动变为 `pending_review`（待复核）；已关闭工单不动。合同状态先落定、再通知工单，通知失败不回滚合同，可调 `POST /api/v1/contracts/:id/sync-tickets` **只重试这批工单**。
+- 关单必须走 `POST /api/v1/tickets/:id/close`（单笔）或 `POST /api/v1/tickets/batch-close`（批量）：以合同库现状与登记快照逐项比对，一致才关；不一致工单置 `on_hold` 并在响应的 `mismatch` 中列出每笔差异字段（`contract_status` / `contract_signers` / 合同已删除）。
+- 待复核或挂起的工单经 `POST /api/v1/tickets/:id/review` 确认后，快照刷新为合同库现状并回到 `processing`，之后即可正常对账关单。
+
+### 旧数据回填
+
+历史上没填合同编号的工单（`contract_id = 0`），升级后用以下任一方式按问题描述里的合同编号（如「合同编号 123」「合同号：88」「contract no. 42」）回填快照：
+
+```bash
+# 方式一：一次性命令（默认扫描全部未关联工单）
+go run ./cmd/ticket-contract-backfill
+# 只处理指定工单
+go run ./cmd/ticket-contract-backfill -tickets=12,18
+
+# 方式二：管理接口（空 body 同样扫描全部）
+curl -X POST http://127.0.0.1:8080/api/v1/admin/tickets/backfill-contract \
+  -H "Authorization: Bearer <token>" -H 'Content-Type: application/json' -d '{}'
+```
+
+结果分 `backfilled`（已回填）与 `unresolved`（回填不出，含原因）两组返回，后者需人工单列处理。
 
 ## 技术栈
 
@@ -121,12 +149,17 @@ go run ./cmd/server
 | POST | /api/v1/contracts/:id/expire | 合同过期 | 是 |
 | GET | /api/v1/contracts/:id/signers | 签署方列表 | 是 |
 | GET | /api/v1/contracts/:id/export | 导出 PDF | 是 |
-| POST | /api/v1/tickets | 提交法律工单 | 是 |
-| GET | /api/v1/tickets | 工单列表 | 是 |
-| GET | /api/v1/tickets/:id | 工单详情及回复 | 是 |
+| POST | /api/v1/tickets | 提交法律工单（可带 contract_id 登记合同快照） | 是 |
+| GET | /api/v1/tickets | 工单列表（支持 status=pending_review/on_hold） | 是 |
+| POST | /api/v1/tickets/batch-close | 批量关单（逐笔对账，返回 closed/mismatch） | 是 |
+| GET | /api/v1/tickets/:id | 工单详情、回复及合同库此刻状态与签署方 | 是 |
 | POST | /api/v1/tickets/:id/replies | 添加回复 | 是 |
 | GET | /api/v1/tickets/:id/replies | 回复列表 | 是 |
-| PATCH | /api/v1/tickets/:id/status | 工单流转 | 是 |
+| PATCH | /api/v1/tickets/:id/status | 工单流转（不含关单；关单走对账） | 是 |
+| POST | /api/v1/tickets/:id/close | 关单对账：一致则关闭，不一致挂起并列差异 | 是 |
+| POST | /api/v1/tickets/:id/review | 复核确认：刷新合同快照并重新投入处理 | 是 |
+| POST | /api/v1/contracts/:id/sync-tickets | 合同落定后联动工单失败时，单独重试这批工单 | 是 |
+| POST | /api/v1/admin/tickets/backfill-contract | 旧工单按描述中的合同编号回填，回填不出的单列 | 是 |
 | GET | /api/v1/faqs | FAQ 搜索 | 否 |
 | GET | /api/v1/faqs/:id | FAQ 详情 | 否 |
 | POST | /api/v1/admin/faqs | 新建 FAQ | 是 |
