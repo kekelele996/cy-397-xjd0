@@ -70,6 +70,15 @@ func New(
 			authed.POST("/tickets/:id/replies", ticketHandler.AddReply)
 			authed.GET("/tickets/:id/replies", ticketHandler.Replies)
 			authed.PATCH("/tickets/:id/status", ticketHandler.UpdateStatus)
+			authed.POST("/tickets/:id/resume-review", ticketHandler.ResumeReview)
+
+			// 工单组批量关单（逐笔对账）与旧数据合同编号回填、异常清单。
+			authed.POST("/admin/tickets/batch-close", ticketHandler.BatchClose)
+			authed.POST("/admin/tickets/backfill-contract", ticketHandler.BackfillContractNo)
+			authed.GET("/admin/tickets/backfails", ticketHandler.Backfails)
+
+			// 合同已落定、工单批联动失败时，只重试工单这一批。
+			authed.POST("/contracts/:id/recheck-tickets", contractHandler.RecheckTickets)
 
 			authed.POST("/admin/faqs", knowledgeHandler.Create)
 			authed.PUT("/admin/faqs/:id", knowledgeHandler.Update)

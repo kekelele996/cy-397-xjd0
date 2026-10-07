@@ -25,7 +25,8 @@ func newContractFixture() (*mockTemplateRepo, *mockContractRepo, *service.Contra
 		},
 	})
 	contracts := newMockContractRepo()
-	svc := service.NewContractService(contracts, templates, service.NewPDFService(testLogger()), testLogger())
+	tickets := newMockTicketRepo()
+	svc := service.NewContractService(contracts, tickets, templates, service.NewPDFService(testLogger()), testLogger())
 	return templates, contracts, svc
 }
 
@@ -102,7 +103,7 @@ func TestContractServiceSubmitAndSign(t *testing.T) {
 		t.Fatalf("ListSigners() = %d, %v; want 2 signers", len(signers), err)
 	}
 
-	if err := svc.Sign(1, contract.ID, "张三", "甲方", "本人确认"); err != nil {
+	if _, err := svc.Sign(1, contract.ID, "张三", "甲方", "本人确认"); err != nil {
 		t.Fatalf("Sign() unexpected error: %v", err)
 	}
 	got, _, err = svc.GetForUser(1, contract.ID)
@@ -127,7 +128,7 @@ func TestContractServiceInvalidTransition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create() unexpected error: %v", err)
 	}
-	if err := svc.Sign(1, contract.ID, "张三", "甲方", ""); err == nil {
+	if _, err := svc.Sign(1, contract.ID, "张三", "甲方", ""); err == nil {
 		t.Fatal("Sign() expected error when status is draft, got nil")
 	}
 }

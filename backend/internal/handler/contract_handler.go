@@ -101,11 +101,12 @@ func (h *ContractHandler) Sign(c *gin.Context) {
 	if signerName == "" {
 		signerName = middleware.CurrentUsername(c)
 	}
-	if err := h.contractService.Sign(middleware.CurrentUserID(c), id, signerName, req.SignerRole, req.SignInfo); err != nil {
+	result, err := h.contractService.Sign(middleware.CurrentUserID(c), id, signerName, req.SignerRole, req.SignInfo)
+	if err != nil {
 		fail(c, err)
 		return
 	}
-	dto.Success(c, gin.H{"contract_id": id, "status": constants.ContractStatusSigned})
+	dto.Success(c, result)
 }
 
 // Expire POST /api/v1/contracts/:id/expire
@@ -114,11 +115,26 @@ func (h *ContractHandler) Expire(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.contractService.Expire(middleware.CurrentUserID(c), id); err != nil {
+	result, err := h.contractService.Expire(middleware.CurrentUserID(c), id)
+	if err != nil {
 		fail(c, err)
 		return
 	}
-	dto.Success(c, gin.H{"contract_id": id, "status": constants.ContractStatusExpired})
+	dto.Success(c, result)
+}
+
+// RecheckTickets POST /api/v1/contracts/:id/recheck-tickets
+func (h *ContractHandler) RecheckTickets(c *gin.Context) {
+	id, ok := parseUintParam(c, "id")
+	if !ok {
+		return
+	}
+	result, err := h.contractService.RecheckContractTickets(middleware.CurrentUserID(c), id)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	dto.Success(c, result)
 }
 
 // Signers GET /api/v1/contracts/:id/signers
@@ -155,6 +171,7 @@ func (h *ContractHandler) Export(c *gin.Context) {
 func buildContractView(contract *model.Contract, templateName string) dto.ContractView {
 	return dto.ContractView{
 		ID:           contract.ID,
+		ContractNo:   contract.ContractNo,
 		UserID:       contract.UserID,
 		TemplateID:   contract.TemplateID,
 		TemplateName: templateName,

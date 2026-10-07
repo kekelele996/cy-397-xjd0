@@ -167,6 +167,15 @@ func (m *mockContractRepo) FindByID(id uint64) (*model.Contract, error) {
 	return contract, nil
 }
 
+func (m *mockContractRepo) FindByContractNo(contractNo string) (*model.Contract, error) {
+	for _, contract := range m.contracts {
+		if contract.ContractNo == contractNo {
+			return contract, nil
+		}
+	}
+	return nil, repository.ErrNotFound
+}
+
 func (m *mockContractRepo) FindByIDForUser(id, userID uint64) (*model.Contract, error) {
 	contract, ok := m.contracts[id]
 	if !ok || contract.UserID != userID {
@@ -207,13 +216,19 @@ func (m *mockContractRepo) ListSigners(contractID uint64) ([]model.ContractSigne
 }
 
 type mockTicketRepo struct {
-	tickets map[uint64]*model.LegalTicket
-	replies map[uint64][]model.TicketReply
-	nextID  uint64
+	tickets   map[uint64]*model.LegalTicket
+	replies   map[uint64][]model.TicketReply
+	backfails map[uint64]*model.TicketContractBackfail
+	nextID    uint64
 }
 
 func newMockTicketRepo() *mockTicketRepo {
-	return &mockTicketRepo{tickets: map[uint64]*model.LegalTicket{}, replies: map[uint64][]model.TicketReply{}, nextID: 1}
+	return &mockTicketRepo{
+		tickets:   map[uint64]*model.LegalTicket{},
+		replies:   map[uint64][]model.TicketReply{},
+		backfails: map[uint64]*model.TicketContractBackfail{},
+		nextID:    1,
+	}
 }
 
 func (m *mockTicketRepo) Create(ticket *model.LegalTicket) error {
@@ -271,3 +286,65 @@ func (m *mockTicketRepo) ListReplies(ticketID uint64) ([]model.TicketReply, erro
 	return m.replies[ticketID], nil
 }
 
+func (m *mockTicketRepo) ListByIDs(ids []uint64) ([]model.LegalTicket, error) {
+	list := make([]model.LegalTicket, 0, len(ids))
+	for _, id := range ids {
+		if ticket, ok := m.tickets[id]; ok {
+			list = append(list, *ticket)
+		}
+	}
+	return list, nil
+}
+
+func (m *mockTicketRepo) InTx(fn func(repository.TicketRepository) error) error {
+	return fn(m)
+}
+
+func (m *mockTicketRepo) MarkReviewPendingByContractNo(contractNo string) (int64, error) {
+	var n int64
+	for _, ticket := range m.tickets {
+		if ticket.ContractNo == contractNo && ticket.Status != "closed" {
+			ticket.Status = "review_pending"
+			n++
+		}
+	}
+	return n, nil
+}
+
+func (m *mockTicketRepo) ListBackfillCandidates(limit int) ([]model.LegalTicket, error) {
+	list := make([]model.LegalTicket, 0)
+	for _, ticket := range m.tickets {
+		if ticket.ContractNo == "" {
+			list = append(list, *ticket)
+		}
+	}
+	return list, nil
+}
+
+func (m *mockTicketRepo) AttachContract(ticketID uint64, contractNo, statusSnapshot string) error {
+	ticket, ok := m.tickets[ticketID]
+	if !ok {
+		return repository.ErrNotFound
+	}
+	ticket.ContractNo = contractNo
+	ticket.ContractStatusSnapshot = statusSnapshot
+	return nil
+}
+
+func (m *mockTicketRepo) RecordBackfail(ticketID uint64, reason, extractedNo string) error {
+	m.backfails[ticketID] = &model.TicketContractBackfail{
+		TicketID:    ticketID,
+		Reason:      reason,
+		ExtractedNo: extractedNo,
+		Resolved:    false,
+	}
+	return nil
+}
+
+func (m *mockTicketRepo) ListBackfails(resolved *bool, offset, limit int) ([]model.TicketContractBackfail, int64, error) {
+	list := make([]model.TicketContractBackfail, 0, len(m.backfails))
+	for _, item := range m.backfails {
+		list = append(list, *item)
+	}
+	return list, int64(len(list)), nil
+}

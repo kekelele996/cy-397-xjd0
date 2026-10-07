@@ -42,6 +42,7 @@ func main() {
 		&model.ContractSigner{},
 		&model.LegalTicket{},
 		&model.TicketReply{},
+		&model.TicketContractBackfail{},
 		&model.KnowledgeFAQ{},
 		&model.TemplateFavorite{},
 	); err != nil {
@@ -61,8 +62,8 @@ func main() {
 	pdfService := service.NewPDFService(logger)
 	authService := service.NewAuthService(userRepo, jwtManager, logger)
 	templateService := service.NewTemplateService(templateRepo, favoriteRepo, logger)
-	contractService := service.NewContractService(contractRepo, templateRepo, pdfService, logger)
-	ticketService := service.NewTicketService(ticketRepo, logger)
+	contractService := service.NewContractService(contractRepo, ticketRepo, templateRepo, pdfService, logger)
+	ticketService := service.NewTicketService(ticketRepo, contractRepo, logger)
 	knowledgeService := service.NewKnowledgeService(knowledgeRepo, logger)
 
 	authHandler := handler.NewAuthHandler(authService, logger)

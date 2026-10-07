@@ -10,9 +10,9 @@ import (
 
 func TestTicketServiceCreate(t *testing.T) {
 	tests := []struct {
-		name    string
+		name       string
 		ticketType string
-		wantErr bool
+		wantErr    bool
 	}{
 		{name: "labor", ticketType: constants.TicketTypeLabor, wantErr: false},
 		{name: "property", ticketType: constants.TicketTypeProperty, wantErr: false},
@@ -20,7 +20,7 @@ func TestTicketServiceCreate(t *testing.T) {
 	}
 
 	repo := newMockTicketRepo()
-	svc := service.NewTicketService(repo, testLogger())
+	svc := service.NewTicketService(repo, newMockContractRepo(), testLogger())
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ticket, err := svc.Create(1, dto.CreateTicketRequest{
@@ -44,7 +44,7 @@ func TestTicketServiceCreate(t *testing.T) {
 
 func TestTicketServiceReplyTransitions(t *testing.T) {
 	repo := newMockTicketRepo()
-	svc := service.NewTicketService(repo, testLogger())
+	svc := service.NewTicketService(repo, newMockContractRepo(), testLogger())
 	ticket, err := svc.Create(1, dto.CreateTicketRequest{
 		Type:        constants.TicketTypeContract,
 		Title:       "合同咨询",

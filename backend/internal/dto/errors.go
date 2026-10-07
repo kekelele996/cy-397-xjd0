@@ -13,6 +13,8 @@ type AppError struct {
 	Status  int
 	Code    int
 	Message string
+	// Details 附带结构化明细（如关单对账差异清单）。
+	Details any
 	Err     error
 }
 
@@ -58,6 +60,16 @@ func ConflictError(message string) *AppError {
 // InvalidTransitionError 构造非法状态流转错误。
 func InvalidTransitionError(message string) *AppError {
 	return NewAppError(http.StatusUnprocessableEntity, constants.CodeInvalidTransition, message)
+}
+
+// ReconcileFailedError 构造关单对账失败（挂起）错误，携带差异清单。
+func ReconcileFailedError(message string, details any) *AppError {
+	return &AppError{
+		Status:  http.StatusConflict,
+		Code:    constants.CodeReconcileFailed,
+		Message: message,
+		Details: details,
+	}
 }
 
 // InternalError 构造内部错误。

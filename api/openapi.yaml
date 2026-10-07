@@ -115,6 +115,11 @@ paths:
                 type: { type: string, enum: [labor, contract, property, ip, other] }
                 title: { type: string }
                 description: { type: string }
+                contract_no:
+                  type: string
+                  pattern: '^HT-\d{4}-\d{6}$'
+                  description: 关联合同编号（HT-YYYY-000001），登记时记录合同状态快照
+                  example: HT-2026-000001
                 attachments:
                   type: array
                   items: { type: string }
@@ -123,6 +128,114 @@ paths:
     get:
       summary: 工单列表
       security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/v1/tickets/{id}:
+    get:
+      summary: 工单详情（实时带出合同库此刻状态与签署方）
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/v1/tickets/{id}/status:
+    patch:
+      summary: 工单流转（关单 closed 前强制对账合同库现状，对不上挂起为 review_pending）
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [pending, processing, replied, closed, review_pending] }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '409':
+          description: 对账失败，工单已挂起，data 为差异明细数组
+  /api/v1/tickets/{id}/resume-review:
+    post:
+      summary: 待复核工单复核通过（按合同库现状刷新登记快照并恢复处理）
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/v1/tickets/{id}/replies:
+    post:
+      summary: 添加工单回复（仅写工单侧，失败只重试工单批，合同库不回滚）
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+    get:
+      summary: 回复列表
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/v1/contracts/{id}/sign:
+    post:
+      summary: 签署合同（落定为已签署，该编号下未关工单自动标待复核）
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/v1/contracts/{id}/expire:
+    post:
+      summary: 合同过期（该编号下未关工单自动标待复核）
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/v1/contracts/{id}/recheck-tickets:
+    post:
+      summary: 合同已落定但工单批联动失败时，只重试工单这一批（合同库照旧）
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/v1/admin/tickets/batch-close:
+    post:
+      summary: 工单组批量关单，逐笔对账；对得上才关，对不上挂起并列明差异
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ticket_ids]
+              properties:
+                ticket_ids:
+                  type: array
+                  items: { type: integer }
+                  example: [1, 2, 3]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/v1/admin/tickets/backfill-contract:
+    post:
+      summary: 旧工单按问题描述中的合同编号回填，回填不出的单列异常清单
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/v1/admin/tickets/backfails:
+    get:
+      summary: 回填不出的工单异常清单
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: resolved, in: query, schema: { type: boolean } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 10 } }
       responses:
         '200': { $ref: '#/components/responses/Success' }
   /api/v1/faqs:

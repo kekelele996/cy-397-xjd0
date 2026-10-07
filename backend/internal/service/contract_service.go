@@ -16,9 +16,19 @@ import (
 	"github.com/contractapi/contractapi/internal/repository"
 )
 
+// ContractSettleResult 合同签署/过期落定结果，含关联工单待复核联动情况。
+type ContractSettleResult struct {
+	ContractID      uint64 `json:"contract_id"`
+	ContractNo      string `json:"contract_no"`
+	Status          string `json:"status"`
+	ReviewMarked    int64  `json:"review_marked"`
+	ReviewSyncError bool   `json:"review_sync_error"`
+}
+
 // ContractService 合同生成、签署状态流转与导出业务。
 type ContractService struct {
 	contractRepo repository.ContractRepository
+	ticketRepo   repository.TicketRepository
 	templateRepo repository.TemplateRepository
 	pdf          *PDFService
 	logger       *slog.Logger
@@ -27,11 +37,23 @@ type ContractService struct {
 // NewContractService 构造合同服务。
 func NewContractService(
 	contractRepo repository.ContractRepository,
+	ticketRepo repository.TicketRepository,
 	templateRepo repository.TemplateRepository,
 	pdf *PDFService,
 	logger *slog.Logger,
 ) *ContractService {
-	return &ContractService{contractRepo: contractRepo, templateRepo: templateRepo, pdf: pdf, logger: logger}
+	return &ContractService{
+		contractRepo: contractRepo,
+		ticketRepo:   ticketRepo,
+		templateRepo: templateRepo,
+		pdf:          pdf,
+		logger:       logger,
+	}
+}
+
+// buildContractNo 生成合同业务编号：HT-年份-6 位主键序号。
+func buildContractNo(id uint64, createdAt time.Time) string {
+	return fmt.Sprintf("HT-%d-%06d", createdAt.Year(), id)
 }
 
 // Create 根据模板与变量生成合同草稿。
@@ -71,7 +93,15 @@ func (s *ContractService) Create(userID uint64, req dto.CreateContractRequest) (
 	if err := s.contractRepo.Create(contract); err != nil {
 		return nil, fmt.Errorf("create contract: save: %w", err)
 	}
-	s.logger.Info("contract created", "contract_id", contract.ID, "user_id", userID, "template_id", templateModel.ID)
+	// 以主键序号生成业务合同编号，并作为工单侧对账关联键。
+	if contract.ContractNo == "" {
+		contract.ContractNo = buildContractNo(contract.ID, contract.CreatedAt)
+		if err := s.contractRepo.Update(contract); err != nil {
+			return nil, fmt.Errorf("create contract: assign contract_no: %w", err)
+		}
+	}
+	s.logger.Info("contract created", "contract_id", contract.ID, "contract_no", contract.ContractNo,
+		"user_id", userID, "template_id", templateModel.ID)
 	return contract, nil
 }
 
@@ -133,23 +163,23 @@ func (s *ContractService) Submit(userID, contractID uint64, signers []dto.Signer
 	return nil
 }
 
-// Sign 将待签署合同置为已签署，记录签署时间和签署方。
-func (s *ContractService) Sign(userID, contractID uint64, signerName, signerRole, signInfo string) error {
+// Sign 将待签署合同置为已签署，记录签署时间和签署方；合同库落定后联动该编号下未关工单待复核。
+func (s *ContractService) Sign(userID, contractID uint64, signerName, signerRole, signInfo string) (*ContractSettleResult, error) {
 	contract, err := s.contractRepo.FindByIDForUser(contractID, userID)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
-			return dto.NotFoundError("contract not found")
+			return nil, dto.NotFoundError("contract not found")
 		}
-		return fmt.Errorf("sign contract: %w", err)
+		return nil, fmt.Errorf("sign contract: %w", err)
 	}
 	if !constants.CanTransitionContract(contract.Status, constants.ContractStatusSigned) {
-		return dto.InvalidTransitionError(fmt.Sprintf("cannot sign contract in status %q", contract.Status))
+		return nil, dto.InvalidTransitionError(fmt.Sprintf("cannot sign contract in status %q", contract.Status))
 	}
 	now := time.Now()
 	contract.Status = constants.ContractStatusSigned
 	contract.SignedAt = &now
 	if err := s.contractRepo.Update(contract); err != nil {
-		return fmt.Errorf("sign contract: update: %w", err)
+		return nil, fmt.Errorf("sign contract: update: %w", err)
 	}
 	if signerRole == "" {
 		signerRole = "签署方"
@@ -161,32 +191,67 @@ func (s *ContractService) Sign(userID, contractID uint64, signerName, signerRole
 		SignedAt:   &now,
 		SignInfo:   signInfo,
 	}); err != nil {
-		return fmt.Errorf("sign contract: add signer: %w", err)
+		return nil, fmt.Errorf("sign contract: add signer: %w", err)
 	}
-	s.logger.Info("contract signed", "contract_id", contract.ID, "signer", signerName)
-	return nil
+	s.logger.Info("contract signed", "contract_id", contract.ID, "contract_no", contract.ContractNo, "signer", signerName)
+	return s.markTicketsReviewPending(contract), nil
 }
 
-// Expire 将合同置为已过期。
-func (s *ContractService) Expire(userID, contractID uint64) error {
+// Expire 将合同置为已过期；合同库落定后联动该编号下未关工单待复核。
+func (s *ContractService) Expire(userID, contractID uint64) (*ContractSettleResult, error) {
 	contract, err := s.contractRepo.FindByIDForUser(contractID, userID)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
-			return dto.NotFoundError("contract not found")
+			return nil, dto.NotFoundError("contract not found")
 		}
-		return fmt.Errorf("expire contract: %w", err)
+		return nil, fmt.Errorf("expire contract: %w", err)
 	}
 	if !constants.CanTransitionContract(contract.Status, constants.ContractStatusExpired) {
-		return dto.InvalidTransitionError(fmt.Sprintf("cannot expire contract in status %q", contract.Status))
+		return nil, dto.InvalidTransitionError(fmt.Sprintf("cannot expire contract in status %q", contract.Status))
 	}
 	now := time.Now()
 	contract.Status = constants.ContractStatusExpired
 	contract.ExpiresAt = &now
 	if err := s.contractRepo.Update(contract); err != nil {
-		return fmt.Errorf("expire contract: update: %w", err)
+		return nil, fmt.Errorf("expire contract: update: %w", err)
 	}
-	s.logger.Info("contract expired", "contract_id", contract.ID)
-	return nil
+	s.logger.Info("contract expired", "contract_id", contract.ID, "contract_no", contract.ContractNo)
+	return s.markTicketsReviewPending(contract), nil
+}
+
+// markTicketsReviewPending 合同落定后把该编号下未关工单标成待复核。
+// 合同库已落定，不参与回滚；工单批失败只在结果中标记，由 RecheckContractTickets 单独重试。
+func (s *ContractService) markTicketsReviewPending(contract *model.Contract) *ContractSettleResult {
+	result := &ContractSettleResult{
+		ContractID: contract.ID,
+		ContractNo: contract.ContractNo,
+		Status:     contract.Status,
+	}
+	if contract.ContractNo == "" {
+		return result
+	}
+	marked, err := s.ticketRepo.MarkReviewPendingByContractNo(contract.ContractNo)
+	if err != nil {
+		result.ReviewSyncError = true
+		s.logger.Error("mark linked tickets review pending failed; contract already settled, retry ticket batch only",
+			"contract_no", contract.ContractNo, "error", err)
+		return result
+	}
+	result.ReviewMarked = marked
+	s.logger.Info("linked tickets marked review pending", "contract_no", contract.ContractNo, "count", marked)
+	return result
+}
+
+// RecheckContractTickets 合同已落定但工单批联动失败时，只重试工单这一批；合同库照旧不改动。
+func (s *ContractService) RecheckContractTickets(userID, contractID uint64) (*ContractSettleResult, error) {
+	contract, err := s.contractRepo.FindByIDForUser(contractID, userID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, dto.NotFoundError("contract not found")
+		}
+		return nil, fmt.Errorf("recheck contract tickets: %w", err)
+	}
+	return s.markTicketsReviewPending(contract), nil
 }
 
 // ListSigners 查询合同签署方。

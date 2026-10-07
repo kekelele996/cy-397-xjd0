@@ -33,17 +33,18 @@ type SignContractRequest struct {
 
 // ContractView 合同视图，附带模板名称。
 type ContractView struct {
-	ID          uint64         `json:"id"`
-	UserID      uint64         `json:"user_id"`
-	TemplateID  uint64         `json:"template_id"`
-	TemplateName string        `json:"template_name"`
-	Title       string         `json:"title"`
-	ContentText string         `json:"content_text"`
-	ContentHTML string         `json:"content_html"`
-	Status      string         `json:"status"`
-	Variables   map[string]string `json:"variables"`
-	SignedAt    any            `json:"signed_at,omitempty"`
-	ExpiresAt   any            `json:"expires_at,omitempty"`
-	CreatedAt   string         `json:"created_at"`
-	UpdatedAt   string         `json:"updated_at"`
+	ID           uint64            `json:"id"`
+	ContractNo   string            `json:"contract_no"`
+	UserID       uint64            `json:"user_id"`
+	TemplateID   uint64            `json:"template_id"`
+	TemplateName string            `json:"template_name"`
+	Title        string            `json:"title"`
+	ContentText  string            `json:"content_text"`
+	ContentHTML  string            `json:"content_html"`
+	Status       string            `json:"status"`
+	Variables    map[string]string `json:"variables"`
+	SignedAt     any               `json:"signed_at,omitempty"`
+	ExpiresAt    any               `json:"expires_at,omitempty"`
+	CreatedAt    string            `json:"created_at"`
+	UpdatedAt    string            `json:"updated_at"`
 }

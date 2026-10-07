@@ -13,6 +13,7 @@ import (
 type ContractRepository interface {
 	Create(contract *model.Contract) error
 	FindByID(id uint64) (*model.Contract, error)
+	FindByContractNo(contractNo string) (*model.Contract, error)
 	FindByIDForUser(id, userID uint64) (*model.Contract, error)
 	ListByUser(userID uint64, status string, offset, limit int) ([]model.Contract, int64, error)
 	Update(contract *model.Contract) error
@@ -43,6 +44,17 @@ func (r *contractRepository) FindByID(id uint64) (*model.Contract, error) {
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("find contract by id: %w", err)
+	}
+	return &contract, nil
+}
+
+func (r *contractRepository) FindByContractNo(contractNo string) (*model.Contract, error) {
+	var contract model.Contract
+	if err := r.db.Where("contract_no = ?", contractNo).First(&contract).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("find contract by contract_no: %w", err)
 	}
 	return &contract, nil
 }

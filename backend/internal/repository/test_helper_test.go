@@ -27,6 +27,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 		&model.ContractSigner{},
 		&model.LegalTicket{},
 		&model.TicketReply{},
+		&model.TicketContractBackfail{},
 		&model.KnowledgeFAQ{},
 		&model.TemplateFavorite{},
 	); err != nil {

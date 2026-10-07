@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS contract_templates (
 
 CREATE TABLE IF NOT EXISTS contracts (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    contract_no VARCHAR(32) NOT NULL,
     user_id BIGINT UNSIGNED NOT NULL,
     template_id BIGINT UNSIGNED NOT NULL,
     title VARCHAR(255) NOT NULL,
@@ -43,6 +44,7 @@ CREATE TABLE IF NOT EXISTS contracts (
     created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
     PRIMARY KEY (id),
+    UNIQUE KEY uk_contracts_contract_no (contract_no),
     KEY idx_contracts_user_id (user_id),
     KEY idx_contracts_template_id (template_id),
     KEY idx_contracts_status (status)
@@ -68,12 +70,28 @@ CREATE TABLE IF NOT EXISTS legal_tickets (
     description TEXT NOT NULL,
     attachments JSON NOT NULL,
     status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    contract_no VARCHAR(32) NULL,
+    contract_status_snapshot VARCHAR(32) NULL,
     created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
     PRIMARY KEY (id),
     KEY idx_legal_tickets_user_id (user_id),
     KEY idx_legal_tickets_type (type),
-    KEY idx_legal_tickets_status (status)
+    KEY idx_legal_tickets_status (status),
+    KEY idx_legal_tickets_contract_no (contract_no)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS ticket_contract_backfails (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ticket_id BIGINT UNSIGNED NOT NULL,
+    reason VARCHAR(255) NOT NULL,
+    extracted_no VARCHAR(32) NOT NULL DEFAULT '',
+    resolved TINYINT(1) NOT NULL DEFAULT 0,
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_ticket_contract_backfails_ticket_id (ticket_id),
+    KEY idx_ticket_contract_backfails_resolved (resolved)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS ticket_replies (
